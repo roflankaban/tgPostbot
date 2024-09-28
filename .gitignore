@@ -362,3 +362,8 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /token_api.py
+/sent_arts.json
+/sent_P.json
+/sent_real.json
+/sent_V.json
+/sent_zoo.json
