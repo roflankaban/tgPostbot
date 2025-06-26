@@ -9,6 +9,9 @@ from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from PIL import Image
 from token_api import TOKEN_API
+from pathlib import Path
+
+script_dir = Path(__file__).resolve().parent
 
 BOLD_START = "<b>"
 BOLD_END = "</b>"
@@ -28,17 +31,18 @@ logger = logging.getLogger(__name__)
 current_directory = os.getcwd()
 logger.info(f"PostBot started: {current_directory} you can send all types of content")
 
-caption = "<a href='https://t.me/AnitiHentai'>💙AntiHentai💛</a>"
-big_file_caption = "<a href='https://t.me/AnitiHentai'>HI-RES 💙AntiHentai💛</a>"
+caption = "<a href='https://t.me/+FuSlw2SpmwBmNmI0'>💙AntiHentai💛</a>"
+big_file_caption = "<a href='https://t.me/+FuSlw2SpmwBmNmI0'>HI-RES 💙AntiHentai💛</a>"
 
+base_drive_path = script_dir.parent.parent
+script_dir = Path(__file__).resolve().parent
 paths = {
-    "art": r"F:\Images",
-    "gif": r"F:\Gif",
-    "video": r"F:\Video",
-    "real": r"F:\Real",
-    "zoo": r"F:\300",
-    "P": r"F:\sheesh\Unpacked\photo",
-    "V": r"F:\sheesh\Unpacked\video"
+    "art": base_drive_path / "Images",
+    "gif": base_drive_path / "Gifs",
+    "video": base_drive_path / "Video",
+    "real": base_drive_path / "Real",
+    "P": base_drive_path / "sheesh" / "Unpacked" / "photo",
+    "V": base_drive_path / "sheesh" / "Unpacked" / "video"
 }
 
 sent_files_paths = {
@@ -46,7 +50,6 @@ sent_files_paths = {
     "video": "sent_videos.json",
     "art": "sent_arts.json",
     "real": "sent_real.json",
-    "zoo": "sent_zoo.json",
     "P": "sent_P.json",
     "V": "sent_V.json"
 }
@@ -67,7 +70,6 @@ sent_gifs = load_sent_files(sent_files_paths["gif"])
 sent_arts = load_sent_files(sent_files_paths["art"])
 sent_videos = load_sent_files(sent_files_paths["video"])
 sent_real = load_sent_files(sent_files_paths["real"])
-sent_zoo = load_sent_files(sent_files_paths["zoo"])
 sent_P = load_sent_files(sent_files_paths["P"])
 sent_V = load_sent_files(sent_files_paths["V"])
 
@@ -81,14 +83,17 @@ async def check_subscription(user_id: int, channel_id: int, status) -> bool:
 
 async def get_start(message: types.Message):
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1001169552807, ['administrator', 'creator']):
+    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
         reply_text = f'Hi! {message.from_user.first_name}. You are an admin, so you know what you are doing, right?'
         await message.answer(reply_text, reply_markup=get_admin_keyboard())
-    elif await check_subscription(user_id, -1001169552807, ['member']):
+    elif await check_subscription(user_id, -1002416443178, ['member']):
         reply_text = f'Hi! {message.from_user.first_name}. Do you want to see something special?'
         await message.answer(reply_text, reply_markup=get_member_keyboard())
     else:
-        await message.reply("You are not subscribed! https://t.me/AnitiHentai")
+        await message.reply(
+    "❌You are not subscribed to <a href='https://t.me/+FuSlw2SpmwBmNmI0'>💙AntiHentai💛</a>!❌",
+    parse_mode='HTML'
+)
 
 def get_admin_keyboard():
     keyboard_builder = ReplyKeyboardBuilder()
@@ -96,42 +101,36 @@ def get_admin_keyboard():
     keyboard_builder.button(text='Gif')
     keyboard_builder.button(text='Video')
     keyboard_builder.button(text='Real')
-    keyboard_builder.button(text='Zoo')
     keyboard_builder.button(text='P')
     keyboard_builder.button(text='V')
     keyboard_builder.adjust(4, 3)
     return keyboard_builder.as_markup(resize_keyboard=True, one_time_keyboard=False, input_field_placeholder="Choose a function")
 
-def get_member_keyboard():
-    keyboard_builder = ReplyKeyboardBuilder()
-    keyboard_builder.button(text='Zoo')
-    keyboard_builder.adjust(1)
-    return keyboard_builder.as_markup(resize_keyboard=True, one_time_keyboard=False, input_field_placeholder="Choose a function")
 
 async def send_link(message: types.Message) -> None:
     url = message.text
-    await bot.send_photo(chat_id=-1001169552807, photo=url, caption=caption, parse_mode=ParseMode.HTML)
+    await bot.send_photo(chat_id=-1002416443178, photo=url, caption=caption, parse_mode=ParseMode.HTML)
     logger.info('File sent from URL')
 
 resend_lock = asyncio.Lock()
 
 async def resend(message: types.Message) -> None:
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1001169552807, ['administrator', 'creator']):
+    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
         async with resend_lock:
             try:
                 if message.photo:
-                    await bot.send_photo(chat_id=-1001169552807, photo=message.photo[-1].file_id, caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_photo(chat_id=-1002416443178, photo=message.photo[-1].file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Photo resent')
                     await asyncio.sleep(1 * 60 * 30)
 
                 elif message.video:
-                    await bot.send_video(chat_id=-1001169552807, video=message.video.file_id, caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_video(chat_id=-1002416443178, video=message.video.file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Video resent')
                     await asyncio.sleep(1 * 60 * 30)
 
                 elif message.animation:
-                    await bot.send_animation(chat_id=-1001169552807, animation=message.animation.file_id, caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_animation(chat_id=-1002416443178, animation=message.animation.file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Animation resent')
                     await asyncio.sleep(1 * 60 * 30)
                 else:
@@ -164,7 +163,7 @@ def resize_image(image_path):
 
 async def send_random_file(message: types.Message, file_type: str, interval_range=(12, 24)) -> None:
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1001169552807, ['administrator', 'creator']):
+    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
         path = paths[file_type]
         sent_files = load_sent_files(sent_files_paths[file_type])
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
@@ -181,17 +180,17 @@ async def send_random_file(message: types.Message, file_type: str, interval_rang
                 if file_type in ['art']:
                   
                     resized_path = resize_image(file_path)
-                    await bot.send_photo(chat_id=-1001169552807, photo=types.FSInputFile(resized_path), caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_photo(chat_id=-1002416443178, photo=types.FSInputFile(resized_path), caption=caption, parse_mode=ParseMode.HTML)
 
                 elif file_type == 'gif':
-                    await bot.send_animation(chat_id=-1001169552807, animation=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_animation(chat_id=-1002416443178, animation=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
                 elif file_type in ['video']:
-                    await bot.send_video(chat_id=-1001169552807, video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_video(chat_id=-1002416443178, video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
                 elif file_type in ['real','P']:
                     if file_size > 10 * 1024 * 1024:
                         file_path = resize_image(file_path)
                     await message.answer_photo(photo=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
-                elif file_type in ['zoo','V']:
+                elif file_type in ['V']:
                     await message.answer_video(video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
 
                 sent_files.add(random_file)
@@ -199,14 +198,20 @@ async def send_random_file(message: types.Message, file_type: str, interval_rang
             else:
                 await message.reply("No files under 50MB available to send.")
                 
-            interval = random.randrange(*interval_range) * random.randrange(3300, 3900)
-            next_post_time = datetime.now() + timedelta(seconds=interval)
-            next_post_msg = f"Next {BOLD_START} {file_type} {BOLD_END} post scheduled at: {BOLD_START} {next_post_time.strftime('%d-%m-%Y %H:%M')} {BOLD_END}"
-            logger.info(next_post_msg)
-            await message.answer(next_post_msg, parse_mode=ParseMode.HTML)
-            await asyncio.sleep(interval)
+            if interval_range == (0, 0):
+                break
+            else:
+                interval = random.randrange(*interval_range) * random.randrange(3300, 3900)
+                next_post_time = datetime.now() + timedelta(seconds=interval)
+                next_post_msg = f"Next {BOLD_START} {file_type} {BOLD_END} post scheduled at: {BOLD_START} {next_post_time.strftime('%d-%m-%Y %H:%M')} {BOLD_END}"
+                logger.info(next_post_msg)
+                await message.answer(next_post_msg, parse_mode=ParseMode.HTML)
+                await asyncio.sleep(interval)
     else:
-        await message.reply("You are not subscribed! https://t.me/AnitiHentai")
+        await message.reply(
+    "❌You are not subscribed to <a href='https://t.me/+FuSlw2SpmwBmNmI0'>💙AntiHentai💛</a>!❌",
+    parse_mode='HTML'
+)
 
 # Handlers for different types of files
 async def send_random_art(message: types.Message) -> None:
@@ -219,16 +224,13 @@ async def send_random_video(message: types.Message) -> None:
     await send_random_file(message, 'video', interval_range=(4, 24))
 
 async def send_random_real(message: types.Message) -> None:
-    await send_random_file(message, 'real')
-
-async def send_random_zoo(message: types.Message) -> None:
-    await send_random_file(message, 'zoo', interval_range=(8, 10)) 
+    await send_random_file(message, 'real', interval_range=(4, 24))
 
 async def send_random_P(message: types.Message) -> None:
-    await send_random_file(message, 'P', interval_range=(8, 10))
+    await send_random_file(message, 'P', interval_range=(0, 0))
     
 async def send_random_V(message: types.Message) -> None:
-    await send_random_file(message, 'V', interval_range=(8, 10))
+    await send_random_file(message, 'V', interval_range=(0, 0))
 
 # Main function to register handlers and start polling
 async def main() -> None:
@@ -237,7 +239,6 @@ async def main() -> None:
     dp.message.register(send_random_art, F.text == "Art")
     dp.message.register(send_random_real, F.text == "Real")
     dp.message.register(send_random_video, F.text == "Video")
-    dp.message.register(send_random_zoo, F.text == "Zoo")
     dp.message.register(send_random_P, F.text == "P")
     dp.message.register(send_random_V, F.text == "V")
     dp.message.register(send_link, F.text.contains('https://') | F.text.contains('http://'))
