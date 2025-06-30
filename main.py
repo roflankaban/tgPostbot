@@ -14,6 +14,10 @@ from aiogram.types import CallbackQuery
 
 script_dir = Path(__file__).resolve().parent
 
+# === Constants ===
+CHANNEL_ID = -1002416443178  # Main channel ID for posting and checking subscriptions
+CHANNEL_LINK = "https://t.me/+7DpKVQBjwCRjNzdk"  # Main channel invite link
+
 BOLD_START = "<b>"
 BOLD_END = "</b>"
 
@@ -35,8 +39,8 @@ logger = logging.getLogger(__name__)
 current_directory = os.getcwd()
 logger.info(f"PostBot started: {current_directory} you can send all types of content")
 
-caption = "<a href='https://t.me/+7DpKVQBjwCRjNzdk'>💙AntiHentai💛</a>"
-big_file_caption = "<a href='https://t.me/+7DpKVQBjwCRjNzdk'>HI-RES 💙AntiHentai💛</a>"
+caption = f"<a href='{CHANNEL_LINK}'>💙AntiHentai💛</a>"
+big_file_caption = f"<a href='{CHANNEL_LINK}'>HI-RES 💙AntiHentai💛</a>"
 
 # Define base paths for different file types
 base_drive_path = script_dir.parent.parent
@@ -123,15 +127,15 @@ def get_approve_keyboard(message_id, user_id):
 @dp.message(F.text == "/start")
 async def get_start(message: types.Message):
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         reply_text = f'Hi! {message.from_user.first_name}. You are an admin, so you know what you are doing, right?'
         await message.answer(reply_text, reply_markup=get_admin_keyboard())
-    elif await check_subscription(user_id, -1002416443178, ['member']):
-        reply_text = f'Hi! {message.from_user.first_name}. Do you want to see something special?'
+    elif await check_subscription(user_id, CHANNEL_ID, ['member']):
+        reply_text = f'Hi! {message.from_user.first_name}. You can suggest your image by sending it to this bot!'
         await message.answer(reply_text, reply_markup=get_member_keyboard())
     else:
         await message.reply(
-            "❌You are not subscribed to <a href='https://t.me/+7DpKVQBjwCRjNzdk'>💙AntiHentai💛</a>!❌",
+            f"❌You are not subscribed to <a href='{CHANNEL_LINK}'>💙AntiHentai💛</a>!❌",
             parse_mode='HTML'
         )
 
@@ -164,7 +168,7 @@ async def send_random_V(message: types.Message):
 @dp.message(F.text.contains('https://') | F.text.contains('http://'))
 async def send_link(message: types.Message) -> None:
     url = message.text
-    await bot.send_photo(chat_id=-1002416443178, photo=url, caption=caption, parse_mode=ParseMode.HTML)
+    await bot.send_photo(chat_id=CHANNEL_ID, photo=url, caption=caption, parse_mode=ParseMode.HTML)
     logger.info('File sent from URL')
 
 # Lock to prevent concurrent resend operations
@@ -174,19 +178,19 @@ resend_lock = asyncio.Lock()
 @dp.message(F.video | F.animation)
 async def resend(message: types.Message):
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         async with resend_lock:
             try:
                 if message.photo:
-                    await bot.send_photo(chat_id=-1002416443178, photo=message.photo[-1].file_id, caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Photo resent')
                     await asyncio.sleep(1 * 60 * 30)
                 elif message.video:
-                    await bot.send_video(chat_id=-1002416443178, video=message.video.file_id, caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_video(chat_id=CHANNEL_ID, video=message.video.file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Video resent')
                     await asyncio.sleep(1 * 60 * 30)
                 elif message.animation:
-                    await bot.send_animation(chat_id=-1002416443178, animation=message.animation.file_id, caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_animation(chat_id=CHANNEL_ID, animation=message.animation.file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Animation resent')
                     await asyncio.sleep(1 * 60 * 30)
                 else:
@@ -200,7 +204,7 @@ async def resend(message: types.Message):
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         # Admin — send directly to the group
         await resend(message)
     else:
@@ -226,7 +230,7 @@ async def approve_photo(callback: CallbackQuery):
     _, message_id, user_id = callback.data.split(":")
     photo_file_id = pending_photos.pop(int(message_id), None)
     if photo_file_id:
-        await bot.send_photo(chat_id=-1002416443178, photo=photo_file_id, caption=caption, parse_mode=ParseMode.HTML)
+        await bot.send_photo(chat_id=CHANNEL_ID, photo=photo_file_id, caption=caption, parse_mode=ParseMode.HTML)
         await callback.message.edit_caption("✅ Photo published", reply_markup=None)
         await callback.answer("Photo published")
     else:
@@ -263,7 +267,7 @@ def resize_image(image_path):
 # Send a random file of the specified type to the group, with optional interval scheduling
 async def send_random_file(message: types.Message, file_type: str, interval_range=(12, 24)) -> None:
     user_id = message.from_user.id
-    if await check_subscription(user_id, -1002416443178, ['administrator', 'creator']):
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         path = paths[file_type]
         sent_files = load_sent_files(sent_files_paths[file_type])
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
@@ -280,12 +284,12 @@ async def send_random_file(message: types.Message, file_type: str, interval_rang
                 # Send the file according to its type
                 if file_type in ['art']:
                     resized_path = resize_image(file_path)
-                    await bot.send_photo(chat_id=-1002416443178, photo=types.FSInputFile(resized_path), caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_photo(chat_id=CHANNEL_ID, photo=types.FSInputFile(resized_path), caption=caption, parse_mode=ParseMode.HTML)
                 elif file_type == 'gif':
-                    await bot.send_animation(chat_id=-1002416443178, animation=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+                    await bot.send_animation(chat_id=CHANNEL_ID, animation=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
                 elif file_type in ['video']:
-                    await bot.send_video(chat_id=-1002416443178, video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
-                elif file_type in ['real','P']:
+                    await bot.send_video(chat_id=CHANNEL_ID, video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+                elif file_type in ['real', 'P']:
                     if file_size > 10 * 1024 * 1024:
                         file_path = resize_image(file_path)
                     await message.answer_photo(photo=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
@@ -308,7 +312,7 @@ async def send_random_file(message: types.Message, file_type: str, interval_rang
                 await asyncio.sleep(interval)
     else:
         await message.reply(
-            "❌You are not subscribed to <a href='https://t.me/+7DpKVQBjwCRjNzdk'>💙AntiHentai💛</a>!❌",
+            f"❌You are not subscribed to <a href='{CHANNEL_LINK}'>💙AntiHentai💛</a>!❌",
             parse_mode='HTML'
         )
 
