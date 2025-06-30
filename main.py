@@ -3,6 +3,8 @@ import random
 import asyncio
 import json
 import logging
+import re
+import aiofiles
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
@@ -35,7 +37,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 ])
 logger = logging.getLogger(__name__)
 
-# Constants
 current_directory = os.getcwd()
 logger.info(f"PostBot started: {current_directory} you can send all types of content")
 
@@ -54,6 +55,10 @@ paths = {
     "V": base_drive_path / "sheesh" / "Unpacked" / "video"
 }
 
+# Ensure all paths exist
+for path in paths.values():
+    os.makedirs(path, exist_ok=True)
+
 # Paths to JSON files that store already sent files
 sent_files_paths = {
     "gif": "sent_gifs.json",
@@ -64,25 +69,24 @@ sent_files_paths = {
     "V": "sent_V.json"
 }
 
-# Utility function to load sent files from JSON
-def load_sent_files(file_path):
+# Async utility functions for loading and saving sent files
+async def load_sent_files_async(file_path):
     if os.path.exists(file_path):
-        with open(file_path, "r") as file:
-            return set(json.load(file))
+        try:
+            async with aiofiles.open(file_path, "r") as file:
+                content = await file.read()
+                return set(json.loads(content))
+        except Exception as e:
+            logger.error(f"Error loading {file_path}: {e}")
+            return set()
     return set()
 
-# Utility function to save sent files to JSON
-def save_sent_files(file_path, sent_files):
-    with open(file_path, "w") as file:
-        json.dump(list(sent_files), file)
-
-# Load sent files sets or initialize empty sets if files don't exist
-sent_gifs = load_sent_files(sent_files_paths["gif"])
-sent_arts = load_sent_files(sent_files_paths["art"])
-sent_videos = load_sent_files(sent_files_paths["video"])
-sent_real = load_sent_files(sent_files_paths["real"])
-sent_P = load_sent_files(sent_files_paths["P"])
-sent_V = load_sent_files(sent_files_paths["V"])
+async def save_sent_files_async(file_path, sent_files):
+    try:
+        async with aiofiles.open(file_path, "w") as file:
+            await file.write(json.dumps(list(sent_files)))
+    except Exception as e:
+        logger.error(f"Error saving {file_path}: {e}")
 
 # Check if a user is subscribed to a channel with a specific status
 async def check_subscription(user_id: int, channel_id: int, status) -> bool:
@@ -164,12 +168,29 @@ async def send_random_P(message: types.Message):
 async def send_random_V(message: types.Message):
     await send_random_file(message, 'V', interval_range=(0, 0))
 
+# URL validation function
+def is_valid_url(url: str) -> bool:
+    # Simple URL validation
+    pattern = re.compile(
+        r'^(https?://)'
+        r'([A-Za-z0-9\.-]+)\.([A-Za-z]{2,6})'
+        r'(/[A-Za-z0-9\._~:/?#\[\]@!$&\'()*+,;=%-]*)?$'
+    )
+    return bool(pattern.match(url))
+
 # Handler for messages containing links, sends the link as a photo to the group
 @dp.message(F.text.contains('https://') | F.text.contains('http://'))
 async def send_link(message: types.Message) -> None:
-    url = message.text
-    await bot.send_photo(chat_id=CHANNEL_ID, photo=url, caption=caption, parse_mode=ParseMode.HTML)
-    logger.info('File sent from URL')
+    url = message.text.strip()
+    if not is_valid_url(url):
+        await message.reply("Invalid URL format.")
+        return
+    try:
+        await bot.send_photo(chat_id=CHANNEL_ID, photo=url, caption=caption, parse_mode=ParseMode.HTML)
+        logger.info('File sent from URL')
+    except Exception as e:
+        logger.error(f"Failed to send photo from URL: {e}")
+        await message.reply("Failed to send image from the provided link. Make sure it's a direct link to an image.")
 
 # Lock to prevent concurrent resend operations
 resend_lock = asyncio.Lock()
@@ -194,9 +215,10 @@ async def resend(message: types.Message):
                     logger.info('Animation resent')
                     await asyncio.sleep(1 * 60 * 30)
                 else:
-                    await message.reply("Unsupported file")
+                    await message.reply("Unsupported or missing media file.")
             except Exception as e:
                 logger.error(f"Error in resend function: {e}")
+                await message.reply("An error occurred while resending the media.")
     else:
         await message.reply("You don't have permission to send media.")
 
@@ -204,6 +226,10 @@ async def resend(message: types.Message):
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
     user_id = message.from_user.id
+    logger.info(f"User {user_id} sent a photo at {datetime.now()}")
+    if not message.photo or not hasattr(message.photo[-1], 'file_id'):
+        await message.reply("No valid photo found in your message.")
+        return
     if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         # Admin — send directly to the group
         await resend(message)
@@ -228,6 +254,7 @@ async def handle_photo(message: types.Message):
 @dp.callback_query(F.data.startswith("approve:"))
 async def approve_photo(callback: CallbackQuery):
     _, message_id, user_id = callback.data.split(":")
+    logger.info(f"Admin {callback.from_user.id} approved photo from user {user_id} at {datetime.now()}")
     photo_file_id = pending_photos.pop(int(message_id), None)
     if photo_file_id:
         await bot.send_photo(chat_id=CHANNEL_ID, photo=photo_file_id, caption=caption, parse_mode=ParseMode.HTML)
@@ -240,6 +267,7 @@ async def approve_photo(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("reject:"))
 async def reject_photo(callback: CallbackQuery):
     _, message_id, user_id = callback.data.split(":")
+    logger.info(f"Admin {callback.from_user.id} rejected photo from user {user_id} at {datetime.now()}")
     pending_photos.pop(int(message_id), None)
     await callback.message.delete()
     await callback.answer("Photo rejected and deleted")
@@ -264,14 +292,28 @@ def resize_image(image_path):
         logger.error(f"Error resizing image: {e}")
         return image_path
 
+# Validate file based on size and existence
+def is_valid_file(file_path: str, max_size_mb: int = 50) -> bool:
+    if not os.path.isfile(file_path):
+        return False
+    if os.path.getsize(file_path) == 0:
+        return False
+    if os.path.getsize(file_path) > max_size_mb * 1024 * 1024:
+        return False
+    return True
+
+# Check if a file has a valid extension
+def has_valid_extension(filename: str, allowed_exts: set) -> bool:
+    return any(filename.lower().endswith(ext) for ext in allowed_exts)
+
 # Send a random file of the specified type to the group, with optional interval scheduling
 async def send_random_file(message: types.Message, file_type: str, interval_range=(12, 24)) -> None:
     user_id = message.from_user.id
     if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         path = paths[file_type]
-        sent_files = load_sent_files(sent_files_paths[file_type])
-        files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-        available_files = [f for f in files if f not in sent_files and os.path.getsize(os.path.join(path, f)) < 50 * 1024 * 1024]
+        sent_files = await load_sent_files_async(sent_files_paths[file_type])
+        files = [f for f in os.listdir(path) if is_valid_file(os.path.join(path, f))]
+        available_files = [f for f in files if f not in sent_files]
 
         while True:
             if available_files:
@@ -297,7 +339,7 @@ async def send_random_file(message: types.Message, file_type: str, interval_rang
                     await message.answer_video(video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
 
                 sent_files.add(random_file)
-                save_sent_files(sent_files_paths[file_type], sent_files)
+                await save_sent_files_async(sent_files_paths[file_type], sent_files)
             else:
                 await message.reply("No files under 50MB available to send.")
             # If interval_range is (0, 0), send only once
