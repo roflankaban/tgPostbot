@@ -13,18 +13,17 @@ from PIL import Image
 from token_api import TOKEN_API
 from pathlib import Path
 from aiogram.types import CallbackQuery
+import io
+import uuid
 
 script_dir = Path(__file__).resolve().parent
 
 # === Constants ===
-CHANNEL_ID = -1002416443178  # Main channel ID for posting and checking subscriptions
+CHANNEL_ID = -1003211451604 # Main channel ID for posting and checking subscriptions
 CHANNEL_LINK = "https://t.me/+7DpKVQBjwCRjNzdk"  # Main channel invite link
 
 BOLD_START = "<b>"
 BOLD_END = "</b>"
-
-# List of administrator IDs (fill in your own)
-ADMIN_IDS = [327220107]  # <-- Specify your IDs here
 
 # Initialize bot and dispatcher
 bot = Bot(token=TOKEN_API)
@@ -40,8 +39,8 @@ logger = logging.getLogger(__name__)
 current_directory = os.getcwd()
 logger.info(f"PostBot started: {current_directory} you can send all types of content")
 
-caption = f"<a href='{CHANNEL_LINK}'>💙AntiHentai💛</a>"
-big_file_caption = f"<a href='{CHANNEL_LINK}'>HI-RES 💙AntiHentai💛</a>"
+caption = f"<a href='{CHANNEL_LINK}'>⛔️ AntiHentai 🚫</a>"
+big_file_caption = f"<a href='{CHANNEL_LINK}'>HI-RES ⛔️ AntiHentai 🚫</a>"
 
 # Define base paths for different file types
 base_drive_path = script_dir.parent.parent
@@ -51,8 +50,8 @@ paths = {
     "gif": base_drive_path / "Gifs",
     "video": base_drive_path / "Video",
     "real": base_drive_path / "Real",
-    "P": base_drive_path / "sheesh" / "Unpacked" / "photo",
-    "V": base_drive_path / "sheesh" / "Unpacked" / "video"
+    "p": base_drive_path / "sheesh" / "Unpacked" / "photo",
+    "v": base_drive_path / "sheesh" / "Unpacked" / "video"
 }
 
 # Ensure all paths exist
@@ -65,8 +64,18 @@ sent_files_paths = {
     "video": "sent_videos.json",
     "art": "sent_arts.json",
     "real": "sent_real.json",
-    "P": "sent_P.json",
-    "V": "sent_V.json"
+    "p": "sent_P.json",
+    "v": "sent_V.json"
+}
+
+# Allowed extensions for each file type
+ALLOWED_EXTENSIONS = {
+    "art": {".jpg", ".jpeg", ".png", ".webp"},
+    "gif": {".gif"},
+    "video": {".mp4", ".mov", ".avi", ".mkv"},
+    "real": {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".avi", ".mkv"},
+    "p": {".jpg", ".jpeg", ".png", ".webp"},
+    "v": {".mp4", ".mov", ".avi", ".mkv"}
 }
 
 # Async utility functions for loading and saving sent files
@@ -134,39 +143,21 @@ async def get_start(message: types.Message):
     if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         reply_text = f'Hi! {message.from_user.first_name}. You are an admin, so you know what you are doing, right?'
         await message.answer(reply_text, reply_markup=get_admin_keyboard())
-    elif await check_subscription(user_id, CHANNEL_ID, ['member']):
-        reply_text = f'Hi! {message.from_user.first_name}. You can suggest your image by sending it to this bot!'
-        await message.answer(reply_text, reply_markup=get_member_keyboard())
     else:
         await message.reply(
-            f"❌You are not subscribed to <a href='{CHANNEL_LINK}'>💙AntiHentai💛</a>!❌",
+            "❌ Only administrators can use this bot. ❌",
             parse_mode='HTML'
         )
 
 # Handlers for admin keyboard buttons to send random files
-@dp.message(F.text == "Gif")
-async def send_random_gif(message: types.Message):
-    await send_random_file(message, 'gif', interval_range=(4, 24))
-
-@dp.message(F.text == "Art")
-async def send_random_art(message: types.Message):
-    await send_random_file(message, 'art', interval_range=(1, 3))
-
-@dp.message(F.text == "Real")
-async def send_random_real(message: types.Message):
-    await send_random_file(message, 'real', interval_range=(4, 24))
-
-@dp.message(F.text == "Video")
-async def send_random_video(message: types.Message):
-    await send_random_file(message, 'video', interval_range=(4, 24))
-
-@dp.message(F.text == "P")
-async def send_random_P(message: types.Message):
-    await send_random_file(message, 'P', interval_range=(0, 0))
-
-@dp.message(F.text == "V")
-async def send_random_V(message: types.Message):
-    await send_random_file(message, 'V', interval_range=(0, 0))
+@dp.message(F.text.in_(["Gif", "Art", "Real", "Video", "P", "V"]))
+async def admin_only_send(message: types.Message):
+    user_id = message.from_user.id
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
+        file_type = message.text.lower()
+        await send_random_file(message, file_type)
+    else:
+        await message.reply("❌ Only administrators can use this bot. ❌", parse_mode='HTML')
 
 # URL validation function
 def is_valid_url(url: str) -> bool:
@@ -178,9 +169,13 @@ def is_valid_url(url: str) -> bool:
     )
     return bool(pattern.match(url))
 
-# Handler for messages containing links, sends the link as a photo to the group
+# Handler for messages containing links
 @dp.message(F.text.contains('https://') | F.text.contains('http://'))
 async def send_link(message: types.Message) -> None:
+    user_id = message.from_user.id
+    if not await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
+        await message.reply("❌ Only administrators can use this bot. ❌", parse_mode='HTML')
+        return
     url = message.text.strip()
     if not is_valid_url(url):
         await message.reply("Invalid URL format.")
@@ -205,92 +200,99 @@ async def resend(message: types.Message):
                 if message.photo:
                     await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Photo resent')
-                    await asyncio.sleep(1 * 60 * 30)
                 elif message.video:
                     await bot.send_video(chat_id=CHANNEL_ID, video=message.video.file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Video resent')
-                    await asyncio.sleep(1 * 60 * 30)
                 elif message.animation:
                     await bot.send_animation(chat_id=CHANNEL_ID, animation=message.animation.file_id, caption=caption, parse_mode=ParseMode.HTML)
                     logger.info('Animation resent')
-                    await asyncio.sleep(1 * 60 * 30)
                 else:
                     await message.reply("Unsupported or missing media file.")
             except Exception as e:
                 logger.error(f"Error in resend function: {e}")
                 await message.reply("An error occurred while resending the media.")
     else:
-        await message.reply("You don't have permission to send media.")
+        await message.reply("❌ Only administrators can use this bot. ❌", parse_mode='HTML')
 
-# Handler for photo messages
+# When a non-admin sends a photo:
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
     user_id = message.from_user.id
-    logger.info(f"User {user_id} sent a photo at {datetime.now()}")
-    if not message.photo or not hasattr(message.photo[-1], 'file_id'):
-        await message.reply("No valid photo found in your message.")
-        return
     if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
-        # Admin — send directly to the group
+        # Admin: post directly
         await resend(message)
     else:
-        # User — send photo for moderation to all admins
+        # Non-admin: send for moderation
         photo_file_id = message.photo[-1].file_id
+        short_id = uuid.uuid4().hex[:16]  # 16 hex chars, always safe and short
+        pending_photos[short_id] = {
+            "user_id": user_id,
+            "file_id": photo_file_id,
+            "timestamp": datetime.now().isoformat()
+        }
         for admin_id in ADMIN_IDS:
             sent_msg = await bot.send_photo(
                 chat_id=admin_id,
                 photo=photo_file_id,
-                caption=f"New publication request from {user_id}"
+                caption=f"Moderation request from {user_id}",
+                reply_markup=get_approve_keyboard(short_id)
             )
-            # Add inline keyboard for approval/rejection after sending the photo
-            await sent_msg.edit_reply_markup(
-                reply_markup=get_approve_keyboard(sent_msg.message_id, user_id)
-            )
-            # Store the pending photo with the message ID as key
-            pending_photos[sent_msg.message_id] = photo_file_id
         await message.reply("Your photo has been sent for moderation.")
 
-# Handler for approval callback from inline keyboard
+# Inline keyboard for moderation
+def get_approve_keyboard(pending_id):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅", callback_data=f"approve:{pending_id}")
+    builder.button(text="❌", callback_data=f"reject:{pending_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+# Approve handler
 @dp.callback_query(F.data.startswith("approve:"))
 async def approve_photo(callback: CallbackQuery):
-    _, message_id, user_id = callback.data.split(":")
-    logger.info(f"Admin {callback.from_user.id} approved photo from user {user_id} at {datetime.now()}")
-    photo_file_id = pending_photos.pop(int(message_id), None)
-    if photo_file_id:
-        await bot.send_photo(chat_id=CHANNEL_ID, photo=photo_file_id, caption=caption, parse_mode=ParseMode.HTML)
+    _, pending_id = callback.data.split(":")
+    info = pending_photos.pop(pending_id, None)
+    if info:
+        await bot.send_photo(chat_id=CHANNEL_ID, photo=info["file_id"], caption=caption, parse_mode=ParseMode.HTML)
         await callback.message.edit_caption("✅ Photo published", reply_markup=None)
         await callback.answer("Photo published")
+        # Notify user
+        await bot.send_message(info["user_id"], "Your photo was approved and published.")
+        # Log moderation action
+        logger.info(f"Photo {info['file_id']} from user {info['user_id']} approved by admin {callback.from_user.id}")
     else:
         await callback.answer("Photo not found", show_alert=True)
 
-# Handler for rejection callback from inline keyboard
+# Reject handler
 @dp.callback_query(F.data.startswith("reject:"))
 async def reject_photo(callback: CallbackQuery):
-    _, message_id, user_id = callback.data.split(":")
-    logger.info(f"Admin {callback.from_user.id} rejected photo from user {user_id} at {datetime.now()}")
-    pending_photos.pop(int(message_id), None)
+    _, pending_id = callback.data.split(":")
+    info = pending_photos.pop(pending_id, None)
     await callback.message.delete()
     await callback.answer("Photo rejected and deleted")
+    if info:
+        await bot.send_message(info["user_id"], "Your photo was rejected.")
+        logger.info(f"Photo {info['file_id']} from user {info['user_id']} rejected by admin {callback.from_user.id}")
 
-# Resize image if it exceeds Telegram's size limits
+# Resize image and return BytesIO object
 def resize_image(image_path):
     try:
         with Image.open(image_path) as img:
             img = img.convert("RGB")
-            # Check if image dimensions exceed Telegram's limits
             max_dimension = 2560
             if max(img.width, img.height) > max_dimension:
                 ratio = max_dimension / max(img.width, img.height)
                 new_width = int(img.width * ratio)
                 new_height = int(img.height * ratio)
                 img = img.resize((new_width, new_height), Image.LANCZOS)
-            temp_path = os.path.join(os.path.dirname(image_path), "temp.jpg")
-            img.save(temp_path, format="JPEG", quality=95)
-            logger.warning(f'File {image_path} resized')
-            return temp_path
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="JPEG", quality=95)
+            img_bytes.seek(0)
+            logger.warning(f'File {image_path} resized in memory')
+            return img_bytes
     except Exception as e:
         logger.error(f"Error resizing image: {e}")
-        return image_path
+        return None
 
 # Validate file based on size and existence
 def is_valid_file(file_path: str, max_size_mb: int = 50) -> bool:
@@ -312,51 +314,67 @@ async def send_random_file(message: types.Message, file_type: str, interval_rang
     if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
         path = paths[file_type]
         sent_files = await load_sent_files_async(sent_files_paths[file_type])
-        files = [f for f in os.listdir(path) if is_valid_file(os.path.join(path, f))]
+        allowed_exts = ALLOWED_EXTENSIONS.get(file_type, set())
+        files = [
+            f for f in os.listdir(path)
+            if is_valid_file(os.path.join(path, f)) and has_valid_extension(f, allowed_exts)
+        ]
         available_files = [f for f in files if f not in sent_files]
 
-        while True:
-            if available_files:
-                random_file = random.choice(available_files)
-                file_path = os.path.join(path, random_file)
-                file_size = os.path.getsize(file_path)
-                file_info = f"{file_path} {BOLD_START}{(file_size / (1024 * 1024)):.2f}MB{BOLD_END}"
-                logger.info(file_info)
-                await message.answer(file_info, parse_mode=ParseMode.HTML)
-                # Send the file according to its type
-                if file_type in ['art']:
-                    resized_path = resize_image(file_path)
-                    await bot.send_photo(chat_id=CHANNEL_ID, photo=types.FSInputFile(resized_path), caption=caption, parse_mode=ParseMode.HTML)
-                elif file_type == 'gif':
-                    await bot.send_animation(chat_id=CHANNEL_ID, animation=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
-                elif file_type in ['video']:
-                    await bot.send_video(chat_id=CHANNEL_ID, video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
-                elif file_type in ['real', 'P']:
-                    if file_size > 10 * 1024 * 1024:
-                        file_path = resize_image(file_path)
+        if available_files:
+            random_file = random.choice(available_files)
+            file_path = os.path.join(path, random_file)
+            file_size = os.path.getsize(file_path)
+            file_info = f"{file_path} {BOLD_START}{(file_size / (1024 * 1024)):.2f}MB{BOLD_END}"
+            logger.info(file_info)
+            await message.answer(file_info, parse_mode=ParseMode.HTML)
+            # Send the file according to its type
+            if file_type == 'art':
+                img_bytes = resize_image(file_path)
+                if img_bytes:
+                    input_file = types.BufferedInputFile(img_bytes.getvalue(), filename="image.jpg")
+                    await bot.send_photo(chat_id=CHANNEL_ID, photo=input_file, caption=caption, parse_mode=ParseMode.HTML)
+                else:
+                    await message.reply("Error resizing image.")
+            elif file_type == 'gif':
+                await bot.send_animation(chat_id=CHANNEL_ID, animation=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+            elif file_type == 'video':
+                await bot.send_video(chat_id=CHANNEL_ID, video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+            elif file_type in ['real', 'p']:
+                if file_size > 10 * 1024 * 1024:
+                    img_bytes = resize_image(file_path)
+                    if img_bytes:
+                        await message.answer_photo(photo=img_bytes, caption=caption, parse_mode=ParseMode.HTML)
+                    else:
+                        await message.reply("Error resizing image.")
+                else:
                     await message.answer_photo(photo=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
-                elif file_type in ['V']:
-                    await message.answer_video(video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
+            elif file_type == 'v':
+                await message.answer_video(video=types.FSInputFile(file_path), caption=caption, parse_mode=ParseMode.HTML)
 
-                sent_files.add(random_file)
-                await save_sent_files_async(sent_files_paths[file_type], sent_files)
-            else:
-                await message.reply("No files under 50MB available to send.")
-            # If interval_range is (0, 0), send only once
-            if interval_range == (0, 0):
-                break
-            else:
-                interval = random.randrange(*interval_range) * random.randrange(3300, 3900)
-                next_post_time = datetime.now() + timedelta(seconds=interval)
-                next_post_msg = f"Next {BOLD_START} {file_type} {BOLD_END} post scheduled at: {BOLD_START} {next_post_time.strftime('%d-%m-%Y %H:%M')} {BOLD_END}"
-                logger.info(next_post_msg)
-                await message.answer(next_post_msg, parse_mode=ParseMode.HTML)
-                await asyncio.sleep(interval)
+            sent_files.add(random_file)
+            await save_sent_files_async(sent_files_paths[file_type], sent_files)
+        else:
+            await message.reply("No files under 50MB available to send.")
+
+        # Do not schedule periodic posts for 'real', 'p', or 'v'
+        if interval_range != (0, 0) and file_type not in ['real', 'p', 'v']:
+            interval = random.randrange(*interval_range) * random.randrange(3300, 3900)
+            next_post_time = datetime.now() + timedelta(seconds=interval)
+            next_post_msg = f"Next {BOLD_START} {file_type} {BOLD_END} post scheduled at: {BOLD_START} {next_post_time.strftime('%d-%m-%Y %H:%M')} {BOLD_END}"
+            logger.info(next_post_msg)
+            await message.answer(next_post_msg, parse_mode=ParseMode.HTML)
+            asyncio.create_task(scheduled_post(file_type, interval, message))
     else:
         await message.reply(
-            f"❌You are not subscribed to <a href='{CHANNEL_LINK}'>💙AntiHentai💛</a>!❌",
+            f"❌ Only administrators can use this bot ❌",
             parse_mode='HTML'
         )
+
+# For scheduled posting, use a background task
+async def scheduled_post(file_type, interval, message):
+    await asyncio.sleep(interval)
+    await send_random_file(message, file_type, interval_range=(0, 0))
 
 # Main entry point for the bot
 async def main() -> None:
