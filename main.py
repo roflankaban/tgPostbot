@@ -19,8 +19,9 @@ import uuid
 script_dir = Path(__file__).resolve().parent
 
 # === Constants ===
-CHANNEL_ID = -1003211451604 # Main channel ID for posting and checking subscriptions
-CHANNEL_LINK = "https://t.me/+7DpKVQBjwCRjNzdk"  # Main channel invite link
+CHANNEL_ID = -1003211451604 
+CHANNEL_LINK = "https://t.me/+swZx0VHxpgFlZDQ0"
+ADMIN_IDS = [327220107] # <-- ДОДАЙТЕ ЦЕЙ РЯДОК (з вашими ID)
 
 BOLD_START = "<b>"
 BOLD_END = "</b>"
@@ -115,7 +116,7 @@ def get_admin_keyboard():
     keyboard_builder.button(text='Real')
     keyboard_builder.button(text='P')
     keyboard_builder.button(text='V')
-    keyboard_builder.adjust(4, 3)
+    keyboard_builder.adjust(3, 4) 
     return keyboard_builder.as_markup(resize_keyboard=True, one_time_keyboard=False, input_field_placeholder="Choose a function")
 
 # Build member keyboard (currently with a placeholder button)
@@ -125,16 +126,16 @@ def get_member_keyboard():
     keyboard_builder.adjust(1)
     return keyboard_builder.as_markup(resize_keyboard=True, one_time_keyboard=False, input_field_placeholder="Choose a function")
 
-# Dictionary to store pending photos for moderation
-pending_photos = {}
-
-# Build inline keyboard for approving or rejecting a photo
-def get_approve_keyboard(message_id, user_id):
+# Inline keyboard for moderation
+def get_approve_keyboard(pending_id):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅", callback_data=f"approve:{message_id}:{user_id}")
-    builder.button(text="❌", callback_data=f"reject:{message_id}:{user_id}")
+    builder.button(text="✅", callback_data=f"approve:{pending_id}")
+    builder.button(text="❌", callback_data=f"reject:{pending_id}")
     builder.adjust(2)
     return builder.as_markup()
+
+# Dictionary to store pending photos for moderation
+pending_photos = {}
 
 # Handler for /start command
 @dp.message(F.text == "/start")
@@ -145,7 +146,7 @@ async def get_start(message: types.Message):
         await message.answer(reply_text, reply_markup=get_admin_keyboard())
     else:
         await message.reply(
-            "❌ Only administrators can use this bot. ❌",
+            "❌ Only administrators can use this bot ❌",
             parse_mode='HTML'
         )
 
@@ -224,44 +225,117 @@ async def handle_photo(message: types.Message):
     else:
         # Non-admin: send for moderation
         photo_file_id = message.photo[-1].file_id
-        short_id = uuid.uuid4().hex[:16]  # 16 hex chars, always safe and short
+        short_id = uuid.uuid4().hex[:16]
         pending_photos[short_id] = {
             "user_id": user_id,
             "file_id": photo_file_id,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "type": "photo"
         }
         for admin_id in ADMIN_IDS:
-            sent_msg = await bot.send_photo(
+            await bot.send_photo(
                 chat_id=admin_id,
                 photo=photo_file_id,
-                caption=f"Moderation request from {user_id}",
+                caption=f"Moderation request (photo) from {user_id}",
                 reply_markup=get_approve_keyboard(short_id)
             )
         await message.reply("Your photo has been sent for moderation.")
 
-# Inline keyboard for moderation
-def get_approve_keyboard(pending_id):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅", callback_data=f"approve:{pending_id}")
-    builder.button(text="❌", callback_data=f"reject:{pending_id}")
-    builder.adjust(2)
-    return builder.as_markup()
+# When a non-admin sends a video:
+@dp.message(F.video)
+async def handle_video(message: types.Message):
+    user_id = message.from_user.id
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
+        await resend(message)
+    else:
+        video_file_id = message.video.file_id
+        short_id = uuid.uuid4().hex[:16]
+        pending_photos[short_id] = {
+            "user_id": user_id,
+            "file_id": video_file_id,
+            "timestamp": datetime.now().isoformat(),
+            "type": "video"
+        }
+        for admin_id in ADMIN_IDS:
+            await bot.send_video(
+                chat_id=admin_id,
+                video=video_file_id,
+                caption=f"Moderation request (video) from {user_id}",
+                reply_markup=get_approve_keyboard(short_id)
+            )
+        await message.reply("Your video has been sent for moderation.")
 
-# Approve handler
+# When a non-admin sends a link:
+@dp.message(F.text.contains('https://') | F.text.contains('http://'))
+async def handle_link(message: types.Message):
+    user_id = message.from_user.id
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
+        await send_link(message)
+    else:
+        url = message.text.strip()
+        if not is_valid_url(url):
+            await message.reply("Invalid URL format.")
+            return
+        short_id = uuid.uuid4().hex[:16]
+        pending_photos[short_id] = {
+            "user_id": user_id,
+            "url": url,
+            "timestamp": datetime.now().isoformat(),
+            "type": "link"
+        }
+        for admin_id in ADMIN_IDS:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=f"Moderation request (link) from {user_id}: {url}",
+                reply_markup=get_approve_keyboard(short_id)
+            )
+        await message.reply("Your link has been sent for moderation.")
+
+# When a non-admin sends a text message (not a link)
+@dp.message(F.text & ~F.text.contains('https://') & ~F.text.contains('http://'))
+async def handle_text(message: types.Message):
+    user_id = message.from_user.id
+    if await check_subscription(user_id, CHANNEL_ID, ['administrator', 'creator']):
+        # Admin: send directly to channel
+        await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
+        logger.info(f"Text message from admin {user_id} sent to channel.")
+    else:
+        # Non-admin: send for moderation
+        short_id = uuid.uuid4().hex[:16]
+        pending_photos[short_id] = {
+            "user_id": user_id,
+            "text": message.text,
+            "timestamp": datetime.now().isoformat(),
+            "type": "text"
+        }
+        for admin_id in ADMIN_IDS:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=f"Moderation request (text) from {user_id}: {message.text}",
+                reply_markup=get_approve_keyboard(short_id)
+            )
+        await message.reply("Your message has been sent for moderation.")
+
+# Approve handler (universal for photo, video, link)
 @dp.callback_query(F.data.startswith("approve:"))
 async def approve_photo(callback: CallbackQuery):
     _, pending_id = callback.data.split(":")
     info = pending_photos.pop(pending_id, None)
     if info:
-        await bot.send_photo(chat_id=CHANNEL_ID, photo=info["file_id"], caption=caption, parse_mode=ParseMode.HTML)
-        await callback.message.edit_caption("✅ Photo published", reply_markup=None)
-        await callback.answer("Photo published")
-        # Notify user
-        await bot.send_message(info["user_id"], "Your photo was approved and published.")
-        # Log moderation action
-        logger.info(f"Photo {info['file_id']} from user {info['user_id']} approved by admin {callback.from_user.id}")
+        if info.get("type") == "photo":
+            await bot.send_photo(chat_id=CHANNEL_ID, photo=info["file_id"], caption=caption, parse_mode=ParseMode.HTML)
+        elif info.get("type") == "video":
+            await bot.send_video(chat_id=CHANNEL_ID, video=info["file_id"], caption=caption, parse_mode=ParseMode.HTML)
+        elif info.get("type") == "link":
+            await bot.send_photo(chat_id=CHANNEL_ID, photo=info["url"], caption=caption, parse_mode=ParseMode.HTML)
+        elif info.get("type") == "text":
+            await bot.send_message(chat_id=CHANNEL_ID, text=info["text"])
+        await callback.message.edit_caption("✅ Published", reply_markup=None)
+        await callback.answer("Published")
+        await bot.send_message(info["user_id"], "Your content was approved and published.")
+        logger.info(f"Content {info.get('file_id', info.get('url', info.get('text')))} from user {info['user_id']} approved by admin {callback.from_user.id}")
     else:
-        await callback.answer("Photo not found", show_alert=True)
+        await callback.answer("Content not found", show_alert=True)
 
 # Reject handler
 @dp.callback_query(F.data.startswith("reject:"))
